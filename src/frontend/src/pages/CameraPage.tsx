@@ -9,6 +9,34 @@ interface CameraPageProps {
   onPhotoSaved: (dataUrl: string, width: number, height: number) => Photo;
 }
 
+// Resize image to max 640x480 and compress
+function resizeDataUrl(
+  dataUrl: string,
+  maxW = 640,
+  maxH = 480,
+  quality = 0.6,
+): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      let w = img.naturalWidth;
+      let h = img.naturalHeight;
+      if (w > maxW || h > maxH) {
+        const ratio = Math.min(maxW / w, maxH / h);
+        w = Math.round(w * ratio);
+        h = Math.round(h * ratio);
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d")!;
+      ctx.drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL("image/jpeg", quality));
+    };
+    img.src = dataUrl;
+  });
+}
+
 function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -42,7 +70,7 @@ export default function CameraPage({ onPhotoSaved }: CameraPageProps) {
     retry,
     videoRef,
     canvasRef,
-  } = useCamera({ facingMode: "user", quality: 0.92, format: "image/jpeg" });
+  } = useCamera({ facingMode: "user", quality: 0.6, format: "image/jpeg" });
 
   // Auto-start camera on mount
   useEffect(() => {
@@ -61,7 +89,8 @@ export default function CameraPage({ onPhotoSaved }: CameraPageProps) {
       await new Promise((r) => setTimeout(r, 500));
       const file1 = await capturePhoto();
       if (file1) {
-        const url1 = await fileToDataUrl(file1);
+        const raw1 = await fileToDataUrl(file1);
+        const url1 = await resizeDataUrl(raw1);
         const { w, h } = await dataUrlDimensions(url1);
         onPhotoSaved(url1, w, h);
       }
@@ -69,7 +98,8 @@ export default function CameraPage({ onPhotoSaved }: CameraPageProps) {
       await new Promise((r) => setTimeout(r, 1000));
       const file2 = await capturePhoto();
       if (file2) {
-        const url2 = await fileToDataUrl(file2);
+        const raw2 = await fileToDataUrl(file2);
+        const url2 = await resizeDataUrl(raw2);
         const { w, h } = await dataUrlDimensions(url2);
         onPhotoSaved(url2, w, h);
       }
@@ -83,14 +113,14 @@ export default function CameraPage({ onPhotoSaved }: CameraPageProps) {
     setTimeout(() => setFlash(false), 400);
   }, []);
 
-  // Manual capture: take photo and immediately download
+  // Manual capture: resize then download
   const handleManualCapture = useCallback(async () => {
     if (!isActive || isLoading) return;
     triggerFlash();
     const file = await capturePhoto();
     if (!file) return;
-    const dataUrl = await fileToDataUrl(file);
-    // Download immediately
+    const raw = await fileToDataUrl(file);
+    const dataUrl = await resizeDataUrl(raw);
     const a = document.createElement("a");
     a.href = dataUrl;
     a.download = `capture_${Date.now()}.jpg`;
